@@ -207,7 +207,7 @@ function parseWaveToGraph(wave) {
     return { nodes, edges };
 }
 
-export default function WorkflowGraph({ workflow }) {
+export default function WorkflowGraph({ workflow, onNodeClick }) {
     // Derive nodes and edges directly from prop
     const { nodes, edges, parseError } = useMemo(() => {
         try {
@@ -224,6 +224,13 @@ export default function WorkflowGraph({ workflow }) {
         if (!workflow) return 'empty';
         return `wf-${workflow.length}-${nodes.length}`;
     }, [workflow, nodes.length]);
+
+    // Handle node click
+    const onNodeClickCallback = useCallback((event, node) => {
+        if (onNodeClick && node && node.id) {
+            onNodeClick(node.id);
+        }
+    }, [onNodeClick]);
 
     if (parseError) {
         return (
@@ -248,6 +255,7 @@ export default function WorkflowGraph({ workflow }) {
                 edges={edges}
                 // onNodesChange/onEdgesChange omitted for read-only stability
                 // Add them back if dragging needed, but requires careful state management
+                onNodeClick={onNodeClickCallback}
                 nodeTypes={nodeTypes}
                 fitView
                 attributionPosition="bottom-left"

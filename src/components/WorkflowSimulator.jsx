@@ -172,27 +172,43 @@ export default function WorkflowSimulator({ workflow }) {
     // Scan workflow for ALL expressions using this API response
     const findAllExpressionUsages = (nodes, varName) => {
         let expressions = new Set();
+        const searchPattern = `api_responses.${varName}`;
+
+        const checkValue = (val) => {
+            if (!val) return;
+            if (typeof val === 'string') {
+                if (val.includes(searchPattern)) {
+                    expressions.add(val);
+                }
+            } else if (Array.isArray(val)) {
+                val.forEach(checkValue);
+            } else if (typeof val === 'object') {
+                Object.values(val).forEach(checkValue);
+            }
+        };
 
         const scanNode = (node) => {
-            // Check fields for expressions
+            // 1. Check direct expressions (Decision, Loop)
+            if (node.expression) checkValue(node.expression);
+
+            // 2. Check prompts (User Interaction)
+            if (node.prompt) checkValue(node.prompt);
+
+            // 3. Check request bodies (API Call)
+            if (node.request) checkValue(node.request);
+
+            // 4. Check fields for expressions
             if (node.fields) {
                 for (const field of node.fields) {
-                    if (field.attributes && field.attributes.options) {
-                        const optionsExpr = field.attributes.options;
-                        if (typeof optionsExpr === 'string' && optionsExpr.includes(`api_responses.${varName}`)) {
-                            expressions.add(optionsExpr);
-                        }
-                    }
-                    if (field.attributes && field.attributes.label_expression) {
-                        const labelExpr = field.attributes.label_expression;
-                        if (labelExpr.includes(`api_responses.${varName}`)) {
-                            expressions.add(labelExpr);
-                        }
+                    if (field.attributes) {
+                        checkValue(field.attributes.options);
+                        checkValue(field.attributes.label_expression);
+                        checkValue(field.attributes.default_value);
                     }
                 }
             }
 
-            // Recurse
+            // Recurse into all possible block types
             if (node.actions) node.actions.forEach(scanNode);
             if (node.if_block) node.if_block.forEach(scanNode);
             if (node.else_block) node.else_block.forEach(scanNode);

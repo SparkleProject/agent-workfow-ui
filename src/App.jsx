@@ -17,6 +17,11 @@ function App() {
   const [workflowPanelOpen, setWorkflowPanelOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('simulator'); // 'simulator' or 'graph'
 
+  // State for active node in graph
+  const [activeNodeId, setActiveNodeId] = useState(null);
+
+
+
   const handleSendMessage = async (content, modelId) => {
     // Add user message
     const userMessage = { role: 'user', content };
@@ -61,6 +66,10 @@ function App() {
     setWorkflowPanelOpen(false);
   };
 
+  const handleNodeClick = (nodeId) => {
+    setActiveNodeId(nodeId);
+  };
+
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
       {/* Sidebar */}
@@ -77,7 +86,11 @@ function App() {
             {messages.length === 0 ? (
               <WelcomeScreen />
             ) : (
-              <MessageList messages={messages} isLoading={isLoading} />
+              <MessageList
+                messages={messages}
+                isLoading={isLoading}
+                activeNodeId={activeNodeId}
+              />
             )}
           </div>
 
@@ -132,7 +145,10 @@ function App() {
                 <WorkflowSimulator workflow={workflow} />
               </div>
               <div className={`absolute inset-0 bg-background ${activeTab === 'graph' ? 'block' : 'hidden'}`}>
-                <WorkflowGraph workflow={workflow} />
+                <WorkflowGraph
+                  workflow={workflow}
+                  onNodeClick={handleNodeClick}
+                />
               </div>
             </div>
           </div>

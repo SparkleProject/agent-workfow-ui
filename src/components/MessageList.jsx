@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { cn } from '../lib/utils';
+import { useEffect } from 'react';
 
 // Helper function to detect if content is JSON and wrap it in a code block
 function preprocessContent(content) {
@@ -26,7 +27,16 @@ function preprocessContent(content) {
     return content;
 }
 
-export default function MessageList({ messages, isLoading }) {
+export default function MessageList({ messages, isLoading, activeNodeId }) {
+    // Effect to scroll to highlighted line
+    useEffect(() => {
+        if (activeNodeId) {
+            const element = document.getElementById('active-json-line');
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+    }, [activeNodeId]);
     return (
         <div className="flex-1 overflow-y-auto">
             <div className="max-w-3xl mx-auto space-y-8 py-8">
@@ -97,11 +107,35 @@ export default function MessageList({ messages, isLoading }) {
                                                     <SyntaxHighlighter
                                                         style={vscDarkPlus}
                                                         language={language || 'text'}
-                                                        PreTag="div"
+                                                        showLineNumbers={true} // Enable to force lineNumber in lineProps
+                                                        wrapLines={true}
+                                                        lineNumberStyle={{ display: 'none' }} // Hide the numbers
                                                         customStyle={{
                                                             margin: '0.5em 0',
                                                             borderRadius: '0.375rem',
                                                             fontSize: '0.875em',
+                                                        }}
+                                                        lineProps={(lineNumber) => {
+                                                            const style = { display: 'block' };
+                                                            // Logic to highlight line if it contains activeNodeId
+                                                            if (activeNodeId && formattedCode) {
+                                                                const lines = formattedCode.split('\n');
+                                                                // Fallback: if lineNumber is not a number, we can't highlight
+                                                                if (typeof lineNumber !== 'number') return { style };
+
+                                                                const lineContent = lines[lineNumber - 1];
+
+                                                                // Create flexible matchers for both string ("id": "123") and number ("id": 123) JSON formats
+                                                                // We strictly look for "id": value pattern to avoid false positives
+                                                                const quotedMatch = `"${activeNodeId}"`;
+                                                                const numberMatch = `: ${activeNodeId}`; // JSON.stringify(x, null, 2) adds space after colon
+
+                                                                if (lineContent && (lineContent.includes(quotedMatch) || lineContent.includes(numberMatch))) {
+                                                                    style.backgroundColor = '#eab30833';
+                                                                    return { style, id: 'active-json-line' };
+                                                                }
+                                                            }
+                                                            return { style };
                                                         }}
                                                         {...props}
                                                     >
