@@ -27,9 +27,17 @@ export default function WorkflowSimulator({ workflow }) {
     const [currentStep, setCurrentStep] = useState(null);
     const [debugLogs, setDebugLogs] = useState([]);
 
+    // Helper to normalize workflow actions (handle V1 array and V2 wave object)
+    const getWorkflowActions = (wf) => {
+        if (Array.isArray(wf)) return wf;
+        if (wf && typeof wf === 'object' && Array.isArray(wf.actions)) return wf.actions;
+        return [];
+    };
+
     // Initialize simulation
     useEffect(() => {
-        if (workflow && Array.isArray(workflow) && workflow.length > 0) {
+        const actions = getWorkflowActions(workflow);
+        if (actions.length > 0) {
             resetSimulation();
         } else {
             setCurrentStep(null);
@@ -79,31 +87,11 @@ export default function WorkflowSimulator({ workflow }) {
             const node = pointer.nodes[pointer.index];
 
             // Handle Control Flow Nodes (Decision, Loops) automatically
-            if (node.type === 'decision') {
-                const expr = node.expression?.['en-US'] || node.expression;
-                const result = evaluateExpression(expr, context);
+            // Handle Control Flow Nodes (Loops) - Decision is now interactive below
 
-                setDebugLogs(prev => [...prev,
-                `[Decision] Expr: "${expr}" | Result: ${result} | Keys: ${Object.keys(context.api_responses).join(', ')}`
-                ]);
-
-                const block = result ? node.if_block : node.else_block;
-
-                if (block && block.length > 0) {
-                    // Push block
-                    const newFrame = { nodes: block, index: 0, type: 'decision_block' };
-                    setExecutionStack([...executionStack, newFrame]);
-                } else {
-                    // No block for this path, skip decision node
-                    const newStack = [...executionStack];
-                    newStack[newStack.length - 1].index++;
-                    setExecutionStack(newStack);
-                }
-                return;
-            }
 
             if (node.type === 'while_loop') {
-                const expr = node.expression?.['en-US'] || node.expression;
+                const expr = node.condition?.expression?.['en-US'] || node.condition?.expression || node.expression?.['en-US'] || node.expression;
                 const shouldEnter = evaluateExpression(expr, context);
 
                 setDebugLogs(prev => [...prev,
@@ -131,22 +119,21 @@ export default function WorkflowSimulator({ workflow }) {
                 // Do-while always enters at least once
                 // Note: Logic allows checking entrance, but standard do_while enters then checks exit/repeat
                 // We treat it as entering a loop block that checks condition at end (handled in pop logic)
+                const expr = node.condition?.expression?.['en-US'] || node.condition?.expression || node.expression?.['en-US'] || node.expression;
                 const newFrame = {
                     nodes: node.actions || [],
                     index: 0,
                     type: 'loop_block',
-                    expression: node.expression?.['en-US'] || node.expression
+                    expression: expr
                 };
                 setExecutionStack([...executionStack, newFrame]);
                 return;
             }
 
-            // Interactive Nodes (User Interaction, API Call) stop the flow for UI
-            if (node.type === 'user_interaction' || node.type === 'api_call') {
+            // Interactive Nodes (User Interaction, API Call, Decision) stop the flow for UI
+            if (node.type === 'user_interaction' || node.type === 'api_call' || node.type === 'decision') {
                 setCurrentStep(node);
-                // Clear inputs if focusing a new user interaction steps
-                // But we must preserve inputs if we just re-rendered.
-                // We rely on currentInputs state cleanup on Next/Back.
+                return;
             }
         };
 
@@ -154,9 +141,46 @@ export default function WorkflowSimulator({ workflow }) {
 
     }, [executionStack, context]);
 
+    const handleDecision = (result) => {
+        if (!currentStep) return;
+
+        const node = currentStep;
+        const newStack = [...executionStack];
+        const currentFrame = newStack[newStack.length - 1];
+
+        // Log the decision
+        setHistory(prev => [...prev, {
+            id: node.id,
+            description: node.description,
+            type: 'decision',
+            result: result ? 'True' : 'False',
+            timestamp: new Date()
+        }]);
+
+        setDebugLogs(prev => [...prev,
+        `[Decision] Manual Selection: ${result} | Node: ${node.id}`
+        ]);
+
+        const block = result ? node.if_block : node.else_block;
+
+        if (block && block.length > 0) {
+            // Push new block
+            currentFrame.index++; // Move past decision node in current frame
+            setExecutionStack([...newStack, { nodes: block, index: 0, type: 'decision_block' }]);
+        } else {
+            // No block for this path, just move to next node
+            currentFrame.index++;
+            setExecutionStack(newStack);
+        }
+
+        // Clear current step to resume processing
+        setCurrentStep(null);
+    };
+
 
     const resetSimulation = () => {
-        setExecutionStack([{ nodes: workflow, index: 0, type: 'root' }]);
+        const actions = getWorkflowActions(workflow);
+        setExecutionStack([{ nodes: actions, index: 0, type: 'root' }]);
         setContext({ replies: {}, api_responses: {}, now: new Date() });
         setHistory([]);
         setCurrentInputs({});
@@ -189,6 +213,7 @@ export default function WorkflowSimulator({ workflow }) {
 
         const scanNode = (node) => {
             // 1. Check direct expressions (Decision, Loop)
+            if (node.condition?.expression) checkValue(node.condition.expression);
             if (node.expression) checkValue(node.expression);
 
             // 2. Check prompts (User Interaction)
@@ -600,6 +625,43 @@ export default function WorkflowSimulator({ workflow }) {
                         </div>
                         {currentStep.fields?.map(renderField)}
                     </>
+                )}
+
+                {currentStep.type === 'decision' && (
+                    <div className="space-y-6">
+                        <div className="mb-6 prose prose-invert max-w-none prose-headings:text-lg prose-p:text-sm">
+                            <h3 className="font-semibold text-foreground mb-2">Decision Required</h3>
+                            {currentStep.description && (
+                                <p className="text-muted-foreground mb-4">{currentStep.description}</p>
+                            )}
+
+                            <div className="bg-secondary/50 rounded p-3 mb-4 font-mono text-sm text-foreground break-all border border-border">
+                                <span className="text-xs text-muted-foreground block mb-1">Expression:</span>
+                                {currentStep.condition?.expression?.['en-US'] || currentStep.condition?.expression || currentStep.expression?.['en-US'] || currentStep.expression || 'Condition'}
+                            </div>
+
+                            {currentStep.condition?.info_plugin_call && (
+                                <div className="mb-4 text-xs text-muted-foreground p-2 border border-border rounded bg-secondary/20">
+                                    <strong className="text-foreground">Plugin Call:</strong> {currentStep.condition.info_plugin_call.info_plugin_name}
+                                </div>
+                            )}
+
+                            <div className="flex gap-4 justify-start mt-6">
+                                <button
+                                    onClick={() => handleDecision(true)}
+                                    className="px-6 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-md font-medium transition-colors flex items-center gap-2"
+                                >
+                                    <span>✅</span> True
+                                </button>
+                                <button
+                                    onClick={() => handleDecision(false)}
+                                    className="px-6 py-2 bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-md font-medium transition-colors flex items-center gap-2"
+                                >
+                                    <span>❌</span> False
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 )}
 
                 {currentStep.type === 'api_call' && (

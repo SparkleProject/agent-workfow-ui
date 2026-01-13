@@ -16,9 +16,12 @@ function App() {
   const [workflow, setWorkflow] = useState(null);
   const [workflowPanelOpen, setWorkflowPanelOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('simulator'); // 'simulator' or 'graph'
-
-  // State for active node in graph
   const [activeNodeId, setActiveNodeId] = useState(null);
+
+
+
+
+
 
 
 
@@ -36,7 +39,13 @@ function App() {
       setMessages(prev => [...prev, response]);
 
       // Check if response contains workflow data
-      if (response.workflow && response.workflow.length > 0) {
+      // Fix: Handle both array (V1) and object (V2 wave) formats
+      const hasWorkflow = response.workflow && (
+        (Array.isArray(response.workflow) && response.workflow.length > 0) ||
+        (typeof response.workflow === 'object' && !Array.isArray(response.workflow))
+      );
+
+      if (hasWorkflow) {
         setWorkflow(response.workflow);
         setWorkflowPanelOpen(true);
       }

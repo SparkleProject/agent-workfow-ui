@@ -126,11 +126,11 @@ export default function MessageList({ messages, isLoading, activeNodeId }) {
                                                                 const lineContent = lines[lineNumber - 1];
 
                                                                 // Create flexible matchers for both string ("id": "123") and number ("id": 123) JSON formats
-                                                                // We strictly look for "id": value pattern to avoid false positives
-                                                                const quotedMatch = `"${activeNodeId}"`;
-                                                                const numberMatch = `: ${activeNodeId}`; // JSON.stringify(x, null, 2) adds space after colon
+                                                                // We strictly look for "id": value pattern to avoid false positives and only highlight the definition
+                                                                const definitionMatchString = `"id": "${activeNodeId}"`;
+                                                                const definitionMatchNumber = `"id": ${activeNodeId}`;
 
-                                                                if (lineContent && (lineContent.includes(quotedMatch) || lineContent.includes(numberMatch))) {
+                                                                if (lineContent && (lineContent.includes(definitionMatchString) || lineContent.includes(definitionMatchNumber))) {
                                                                     style.backgroundColor = '#eab30833';
                                                                     return { style, id: 'active-json-line' };
                                                                 }

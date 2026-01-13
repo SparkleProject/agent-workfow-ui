@@ -5,6 +5,8 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const sendMessage = async (message, model) => {
     try {
+
+
         const response = await fetch('/api/azure/chat', {
             method: 'POST',
             headers: {
@@ -27,10 +29,22 @@ export const sendMessage = async (message, model) => {
         // If workflow data isn't at the top level, try to parse it from the response text
         if (!workflowData && data.response && typeof data.response === 'string') {
             try {
-                // Check if the response looks like JSON containing a wave array
-                if (data.response.trim().startsWith('{') && data.response.includes('"wave"')) {
+                // Check if the response looks like JSON
+                const trimmedResponse = data.response.trim();
+                // Simple heuristic to check if it might be JSON
+                if (trimmedResponse.startsWith('{') && (trimmedResponse.includes('"wave"') || trimmedResponse.includes('"type": "wave"'))) {
                     const parsedResponse = JSON.parse(data.response);
+
+                    // Case 1: V1 - Wrapped in "wave" array
                     if (parsedResponse.wave && Array.isArray(parsedResponse.wave)) {
+                        workflowData = parsedResponse.wave;
+                    }
+                    // Case 2: V2 - Root object is the wave
+                    else if (parsedResponse.type === 'wave' && Array.isArray(parsedResponse.actions)) {
+                        workflowData = parsedResponse;
+                    }
+                    // Case 3: V2 - Wrapped in "wave" object
+                    else if (parsedResponse.wave && parsedResponse.wave.type === 'wave') {
                         workflowData = parsedResponse.wave;
                     }
                 }
