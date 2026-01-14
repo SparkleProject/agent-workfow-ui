@@ -9,17 +9,235 @@
  * -// Types: string, number, boolean, date/time
  */
 
-// Interpolate a string containing ${...} expressions
+// Interpolate a string containing ${...} and Freemarker tags <#...>
 export const interpolateString = (text, context) => {
     if (!text || typeof text !== 'string') return text;
 
-    // Pattern to match ${expression}
-    // We use a non-greedy match for the content inside brackets
-    return text.replace(/\$\{([^}]+)\}/g, (match, expr) => {
-        const result = evaluateExpression(expr, context);
-        // If result is null/undefined, return empty string (or original match if preferred, but empty is standard for templates)
-        return result !== null && result !== undefined ? String(result) : '';
-    });
+    // console.log('[ExpressionEngine] Starting interpolation. Text length:', text.length);
+    // console.log('[ExpressionEngine] Context keys:', Object.keys(context));
+
+    let output = '';
+    let remaining = text;
+    let currentContext = { ...context }; // Scoped context for assignments
+
+    let loopCount = 0;
+    while (remaining.length > 0) {
+        loopCount++;
+        if (loopCount > 1000) {
+            console.error('[ExpressionEngine] Infinite loop detected, aborting.');
+            output += remaining;
+            break;
+        }
+
+        // Find next tag start: <# or ${
+        const tagMatch = remaining.match(/(<#|\$\{)/);
+
+        if (!tagMatch) {
+            output += remaining;
+            break;
+        }
+
+        const tagIdx = tagMatch.index;
+        output += remaining.substring(0, tagIdx);
+        remaining = remaining.substring(tagIdx);
+
+        // 1. Interpolation ${...}
+        if (remaining.startsWith('${')) {
+            const endIdx = findClosingBrace(remaining, '{', '}');
+            if (endIdx === -1) {
+                // Malformed, treat as literal
+                output += '${';
+                remaining = remaining.substring(2);
+                continue;
+            }
+
+            const expr = remaining.substring(2, endIdx);
+            const result = evaluateExpression(expr, currentContext);
+            output += (result !== null && result !== undefined) ? String(result) : '';
+            remaining = remaining.substring(endIdx + 1);
+        }
+        // 2. Freemarker Tags <#...>
+        else if (remaining.startsWith('<#')) {
+            // <#assign var = val>
+            if (remaining.startsWith('<#assign')) {
+                const endIdx = findTagClose(remaining, 8); // Start searching after <#assign
+                if (endIdx > -1) {
+                    const tagContent = remaining.substring(8, endIdx).trim(); // remove <#assign and >
+                    // Parse "var = val"
+                    const eqIdx = tagContent.indexOf('=');
+                    if (eqIdx > -1) {
+                        const varName = tagContent.substring(0, eqIdx).trim();
+                        const valExpr = tagContent.substring(eqIdx + 1).trim();
+                        const val = evaluateExpression(valExpr, currentContext);
+                        console.log(`[ExpressionEngine] Assigned ${varName} =`, val);
+                        currentContext[varName] = val; // storing in currentContext root
+                    } else {
+                        console.warn('[ExpressionEngine] Invalid assign syntax:', tagContent);
+                    }
+                    remaining = remaining.substring(endIdx + 1);
+                } else {
+                    output += '<#assign';
+                    remaining = remaining.substring(8);
+                }
+            }
+            // <#if condition>
+            else if (remaining.startsWith('<#if')) {
+                const closeTagIdx = findTagClose(remaining, 4); // Start searching after <#if
+                if (closeTagIdx > -1) {
+                    const conditionExpr = remaining.substring(4, closeTagIdx).trim();
+                    // console.log(`[ExpressionEngine] Found IF. Condition: "${conditionExpr}"`);
+
+                    // Find matching </#if>
+                    const blockEnd = findMatchingEndTag(remaining, 'if');
+
+                    if (blockEnd > -1) {
+                        const innerContent = remaining.substring(closeTagIdx + 1, blockEnd);
+                        const shouldRender = evaluateExpression(conditionExpr, currentContext);
+                        // console.log(`[ExpressionEngine] Evaluated IF "${conditionExpr}" ->`, shouldRender);
+
+                        if (innerContent.includes('<#else>')) {
+                            const [trueBlock, falseBlock] = innerContent.split('<#else>');
+                            if (shouldRender) {
+                                output += interpolateString(trueBlock, currentContext);
+                            } else {
+                                output += interpolateString(falseBlock, currentContext);
+                            }
+                        } else {
+                            if (shouldRender) {
+                                output += interpolateString(innerContent, currentContext);
+                            }
+                        }
+
+                        remaining = remaining.substring(blockEnd + 6); // skip </#if>
+                    } else {
+                        // Unclosed if
+                        console.warn('[ExpressionEngine] Unclosed IF tag detected.');
+                        output += remaining.substring(0, closeTagIdx + 1);
+                        remaining = remaining.substring(closeTagIdx + 1);
+                    }
+                } else {
+                    output += '<#if';
+                    remaining = remaining.substring(4);
+                }
+            }
+            // <#list items as item>
+            else if (remaining.startsWith('<#list')) {
+                const closeTagIdx = findTagClose(remaining, 6); // After <#list
+                if (closeTagIdx > -1) {
+                    const tagContent = remaining.substring(6, closeTagIdx).trim();
+                    // Parse "items as item"
+                    const asIndex = tagContent.indexOf(' as ');
+                    if (asIndex > -1) {
+                        const listExpr = tagContent.substring(0, asIndex).trim();
+                        const varName = tagContent.substring(asIndex + 4).trim();
+
+                        const listVal = evaluateExpression(listExpr, currentContext);
+
+                        const blockEnd = findMatchingEndTag(remaining, 'list');
+                        if (blockEnd > -1) {
+                            const innerContent = remaining.substring(closeTagIdx + 1, blockEnd);
+
+                            if (Array.isArray(listVal)) {
+                                listVal.forEach((item, index) => {
+                                    const loopContext = { ...currentContext, [varName]: item };
+                                    // Add Loop Variables (name_index, name_has_next)
+                                    loopContext[`${varName}_index`] = index;
+                                    loopContext[`${varName}_has_next`] = index < listVal.length - 1;
+
+                                    output += interpolateString(innerContent, loopContext);
+                                });
+                            }
+                            remaining = remaining.substring(blockEnd + 8); // skip </#list>
+                        } else {
+                            output += remaining.substring(0, closeTagIdx + 1);
+                            remaining = remaining.substring(closeTagIdx + 1);
+                        }
+                    } else {
+                        // Malformed list tag
+                        output += remaining.substring(0, closeTagIdx + 1);
+                        remaining = remaining.substring(closeTagIdx + 1);
+                    }
+                } else {
+                    output += '<#list';
+                    remaining = remaining.substring(6);
+                }
+            }
+            else {
+                // Unknown tag, treat as literal
+                output += '<#';
+                remaining = remaining.substring(2);
+            }
+        }
+    }
+    return output;
+};
+
+// Helper: Find the closing '>' of a tag, ignoring parens/quotes
+const findTagClose = (text, startIndex) => {
+    let depth = 0; // parens depth
+    let quote = null;
+
+    for (let i = startIndex; i < text.length; i++) {
+        const char = text[i];
+
+        if (quote) {
+            if (char === quote && text[i - 1] !== '\\') {
+                quote = null;
+            }
+        } else {
+            if (char === '"' || char === "'") {
+                quote = char;
+            } else if (char === '(' || char === '[' || char === '{') {
+                depth++;
+            } else if (char === ')' || char === ']' || char === '}') {
+                depth--;
+            } else if (char === '>' && depth === 0) {
+                return i;
+            }
+        }
+    }
+    return -1;
+};
+
+// Helper to find matching end tag (handles nesting)
+const findMatchingEndTag = (text, tagName) => {
+    const startTag = `<#${tagName}`;
+    const endTag = `</#${tagName}>`;
+
+    let depth = 0;
+    let index = 0;
+
+    while (index < text.length) {
+        const nextStart = text.indexOf(startTag, index);
+        const nextEnd = text.indexOf(endTag, index);
+
+        // No more tags
+        if (nextEnd === -1) return -1;
+
+        // If start tag appears before end tag, allow nesting
+        if (nextStart !== -1 && nextStart < nextEnd) {
+            depth++;
+            index = nextStart + startTag.length;
+        } else {
+            depth--;
+            if (depth === 0) return nextEnd;
+            index = nextEnd + endTag.length;
+        }
+    }
+    return -1;
+};
+
+// Helper to find balanced closing brace
+const findClosingBrace = (text, openChar, closeChar) => {
+    let depth = 0;
+    for (let i = 0; i < text.length; i++) {
+        if (text[i] === openChar) depth++;
+        else if (text[i] === closeChar) {
+            depth--;
+            if (depth === 0) return i;
+        }
+    }
+    return -1;
 };
 
 export const evaluateExpression = (expression, context) => {
@@ -30,6 +248,28 @@ export const evaluateExpression = (expression, context) => {
     let expr = expression.trim();
     if (expr.startsWith('${') && expr.endsWith('}')) {
         expr = expr.substring(2, expr.length - 1);
+    }
+
+    // Handle Default Value Operator (var!default or var![])
+    // Split by ! but check if it's != (not equals)
+    // We scan for ! that is NOT followed by =
+    // And NOT at the start (negation)
+    // Actually regex replace is safer?
+    // Let's do simple scan
+    for (let i = 1; i < expr.length - 1; i++) {
+        if (expr[i] === '!' && expr[i + 1] !== '=') {
+            // Found default operator
+            const left = expr.substring(0, i).trim();
+            const right = expr.substring(i + 1).trim();
+
+            const leftVal = evalLogical(left, context);
+            if (leftVal !== null && leftVal !== undefined) return leftVal;
+
+            // Eval default
+            // If right is [], return empty array
+            if (right === '[]') return [];
+            return evalValue(right, context);
+        }
     }
 
     try {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import WelcomeScreen from './components/WelcomeScreen';
 import ChatInput from './components/ChatInput';
@@ -17,6 +17,9 @@ function App() {
   const [workflowPanelOpen, setWorkflowPanelOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('simulator'); // 'simulator' or 'graph'
   const [activeNodeId, setActiveNodeId] = useState(null);
+
+  // MOCK DATA FOR RETRIEVED ANSWERS VERIFICATION
+
 
 
 

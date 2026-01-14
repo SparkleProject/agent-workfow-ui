@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { ChevronRight, ChevronLeft, RotateCcw, Play, Sparkles } from 'lucide-react';
 import { evaluateExpression, interpolateString } from '../utils/expressionEngine';
 import { ErrorBoundary } from './ErrorBoundary';
-import { sendMessage } from '../services/agentApi';
+import { sendMessage, getModels } from '../services/agentApi';
 
 export default function WorkflowSimulator({ workflow }) {
     // State for the simulation engine
@@ -34,8 +34,18 @@ export default function WorkflowSimulator({ workflow }) {
         return [];
     };
 
+    const [availableModels, setAvailableModels] = useState([]);
+
     // Initialize simulation
     useEffect(() => {
+        // Fetch models
+        getModels().then(models => {
+            console.log('[Debug] Available Models:', models);
+            if (models && models.length > 0) {
+                setAvailableModels(models);
+            }
+        });
+
         const actions = getWorkflowActions(workflow);
         if (actions.length > 0) {
             resetSimulation();
@@ -43,6 +53,7 @@ export default function WorkflowSimulator({ workflow }) {
             setCurrentStep(null);
         }
     }, [workflow]);
+
 
     // Effect to process the current state and determine the active step
     // This runs whenever stack changes (navigation)
@@ -189,20 +200,37 @@ export default function WorkflowSimulator({ workflow }) {
 
     // Mock Response State
     const [mockResponse, setMockResponse] = useState('{\n  "status": "success",\n  "data": "Mock Data"\n}');
+    const [retrievedMocks, setRetrievedMocks] = useState({}); // Map of key -> json string
     const [apiNameInput, setApiNameInput] = useState('');
     const [isGeneratingMock, setIsGeneratingMock] = useState(false);
     const [hasGeneratedMock, setHasGeneratedMock] = useState({}); // Track generation per step ID to avoid loops
 
     // Scan workflow for ALL expressions using this API response
-    const findAllExpressionUsages = (nodes, varName) => {
+    const findAllExpressionUsages = (workflowOrNodes, varName) => {
+        // Normalize workflow to array of nodes
+        let nodes = workflowOrNodes;
+        if (!Array.isArray(workflowOrNodes)) {
+            // Handle V2 workflow object
+            if (workflowOrNodes && typeof workflowOrNodes === 'object' && Array.isArray(workflowOrNodes.actions)) {
+                nodes = workflowOrNodes.actions;
+            } else {
+                // Invalid input, return empty
+                console.warn('[findAllExpressionUsages] Invalid workflow format:', workflowOrNodes);
+                return [];
+            }
+        }
+
         let expressions = new Set();
-        const searchPattern = `api_responses.${varName}`;
+        // Check for usage in replies (mapped from retrieved_answers) OR api_responses
+        const searchPatterns = [`api_responses.${varName}`, `replies.${varName}`];
 
         const checkValue = (val) => {
             if (!val) return;
             if (typeof val === 'string') {
-                if (val.includes(searchPattern)) {
-                    expressions.add(val);
+                for (const pattern of searchPatterns) {
+                    if (val.includes(pattern)) {
+                        expressions.add(val);
+                    }
                 }
             } else if (Array.isArray(val)) {
                 val.forEach(checkValue);
@@ -243,7 +271,7 @@ export default function WorkflowSimulator({ workflow }) {
         return Array.from(expressions);
     };
 
-    // Update mock response default and api name when stepping into API call
+    // Update mock response default and api name when stepping into API call OR User Interaction with retrieved_answers
     // AND Re-hydrate inputs if we have visited this step before (e.g. Back button)
     useEffect(() => {
         if (!currentStep) return;
@@ -253,8 +281,6 @@ export default function WorkflowSimulator({ workflow }) {
             const cleanName = rawName.replace(/\s+/g, '_').toLowerCase();
             setApiNameInput(cleanName);
 
-            // Smart Mocking: Manual Trigger now, so we only set default if empty
-            // (Actually, we set default initial value if state is practically empty or just initialized)
             if (mockResponse === '{\n  "status": "success",\n  "data": "Mock Data"\n}') {
                 const defaultMock = {
                     status: "success",
@@ -265,25 +291,41 @@ export default function WorkflowSimulator({ workflow }) {
                 setMockResponse(JSON.stringify(defaultMock, null, 2));
             }
         }
-        // If already generated or visited, we keep the current mockResponse (or it might have been reset? 
-        // Wait, mockResponse state is preserved as long as we don't unmount? 
-        // No, WorkflowSimulator stays mounted. But mockResponse is state.
-        // If we have multiple API steps, it overwrites.
-        // That's acceptable for now. 
 
+        if (currentStep.type === 'user_interaction') {
+            // Restore inputs
+            if (currentStep.fields) {
+                const restoredInputs = {};
+                currentStep.fields.forEach(field => {
+                    if (context.replies[field.name] !== undefined) {
+                        restoredInputs[field.name] = context.replies[field.name];
+                    }
+                });
+                setCurrentInputs(restoredInputs);
+            }
 
-
-        if (currentStep.type === 'user_interaction' && currentStep.fields) {
-            const restoredInputs = {};
-            currentStep.fields.forEach(field => {
-                // Check if we have a saved reply for this field
-                if (context.replies[field.name] !== undefined) {
-                    restoredInputs[field.name] = context.replies[field.name];
-                }
-            });
-            setCurrentInputs(restoredInputs);
+            // Initialize retrieved_answers mocks
+            if (currentStep.retrieved_answers) {
+                const initialMocks = {};
+                Object.keys(currentStep.retrieved_answers).forEach(key => {
+                    // Check if we already have this in context (from previous visit or pre-fill)
+                    if (context.replies[key] !== undefined) {
+                        initialMocks[key] = JSON.stringify(context.replies[key], null, 2);
+                    } else {
+                        // Default mock
+                        initialMocks[key] = JSON.stringify({
+                            status: "success",
+                            data: "Mock Data for " + key,
+                            items: []
+                        }, null, 2);
+                    }
+                });
+                setRetrievedMocks(initialMocks);
+            } else {
+                setRetrievedMocks({});
+            }
         }
-    }, [currentStep, context.replies]); // Add context.replies dependency
+    }, [currentStep, context.replies]);
 
     const handleNext = async () => {
         if (!currentStep) return;
@@ -291,23 +333,44 @@ export default function WorkflowSimulator({ workflow }) {
         let nextContext = JSON.parse(JSON.stringify(context));
 
         // 1. Handle User Interaction
-        if (currentStep.type === 'user_interaction' && currentStep.fields) {
-            // Check required fields
-            const missingFields = currentStep.fields
-                .filter(f => !f.attributes?.optional && !currentInputs[f.name] && currentInputs[f.name] !== 0)
-                .map(f => f.name.replace(/_/g, ' '));
-
-            if (missingFields.length > 0) {
-                alert(`Please fill in all required fields: ${missingFields.join(', ')}`);
-                return;
+        if (currentStep.type === 'user_interaction') {
+            // Handle Retrieved Answers (Mocking)
+            if (currentStep.retrieved_answers) {
+                for (const key of Object.keys(currentStep.retrieved_answers)) {
+                    const mockValue = retrievedMocks[key];
+                    try {
+                        const parsed = JSON.parse(mockValue);
+                        // Save to replies as requested: "replies.search_results"
+                        nextContext.replies[key] = parsed;
+                    } catch (e) {
+                        alert(`Invalid JSON in mock editor for '${key}'`);
+                        return; // Stop processing
+                    }
+                }
             }
 
-            // Update nextContext with inputs
-            currentStep.fields.forEach(field => {
-                if (currentInputs[field.name] !== undefined) {
-                    nextContext.replies[field.name] = currentInputs[field.name];
+            // Handle Fields
+            if (currentStep.fields) {
+                // Check required fields
+                const missingFields = currentStep.fields
+                    .filter(f => !f.attributes?.optional && !currentInputs[f.name] && currentInputs[f.name] !== 0)
+                    .map(f => f.name.replace(/_/g, ' '));
+
+                if (missingFields.length > 0) {
+                    alert(`Please fill in all required fields: ${missingFields.join(', ')}`);
+                    return;
                 }
-            });
+
+                // Update nextContext with inputs
+                currentStep.fields.forEach(field => {
+                    if (currentInputs[field.name] !== undefined) {
+                        nextContext.replies[field.name] = currentInputs[field.name];
+                        // If it's single choice, we might want to store the object if the option was an object?
+                        // Currently we store the value (ID/Code). 
+                        // The user request didn't specify changing this behavior, just using the result of retrieved keys.
+                    }
+                });
+            }
         }
 
         // 2. Handle API Call
@@ -342,7 +405,8 @@ export default function WorkflowSimulator({ workflow }) {
         // 4. Update State and Advance
         setContext(nextContext);
 
-        const newStack = [...executionStack];
+        // Correctly update stack without mutation
+        const newStack = executionStack.map(frame => ({ ...frame })); // Shallow copy frames
         newStack[newStack.length - 1].index++;
         setExecutionStack(newStack);
         // Do NOT manually clear currentInputs here, the useEffect will handle it
@@ -364,10 +428,12 @@ export default function WorkflowSimulator({ workflow }) {
                 });
             }
 
-            setExecutionStack(prevState.stack);
+            // Critical: Ensure we use a fresh copy of the stack to force React to detect change if needed
+            const stackToRestore = JSON.parse(JSON.stringify(prevState.stack));
+
+            setExecutionStack(stackToRestore);
             setContext(contextToRestore);
             setHistory(history.slice(0, -1));
-            // Do NOT manually clear currentInputs here, the useEffect will restore it from context
         }
     };
 
@@ -386,25 +452,56 @@ export default function WorkflowSimulator({ workflow }) {
         });
     };
 
-    const handleGenerateMock = () => {
-        if (!currentStep) return;
+    // Generic function to generate mock
+    // targetKey: the key in 'retrievedMocks' to update, or null for 'mockResponse' (standard API call)
+    // varName: the variable name to search in expressions (e.g. 'search_results')
+    const handleGenerateMock = (targetKey = null, varName = null) => {
+        console.log('[Mock Gen] Function called with:', { targetKey, varName, currentStep });
+        if (!currentStep) {
+            console.log('[Mock Gen] No current step, aborting');
+            return;
+        }
+
+        // If targetKey is an Event (from click handler), treat as null (API call mock)
+        const actualTargetKey = (targetKey && typeof targetKey === 'object' && targetKey.nativeEvent) ? null : targetKey;
+        console.log('[Mock Gen] Actual target key:', actualTargetKey);
 
         setIsGeneratingMock(true);
-        const rawName = currentStep.response || currentStep.api_name || 'unknown_api';
-        const cleanName = rawName.replace(/\s+/g, '_').toLowerCase();
+        console.log('[Mock Gen] Set generating state to true');
+
+        let cleanName = varName;
+        if (!cleanName) {
+            const rawName = currentStep.response || currentStep.api_name || 'unknown_api';
+            cleanName = rawName.replace(/\s+/g, '_').toLowerCase();
+        }
+        console.log('[Mock Gen] Clean name:', cleanName);
 
         const expressions = findAllExpressionUsages(workflow, cleanName);
+        console.log('[Mock Gen] Found expressions:', expressions);
 
         // Construct prompt with variable name and expression list
+        const namespace = actualTargetKey ? 'replies' : 'api_responses';
         const prompt = expressions.length > 0
-            ? `Give a json example as the value of 'api_responses.${cleanName}' to match value of these freemarker expressions: ${JSON.stringify(expressions)}, return the json value only, do not include the key api_responses.${cleanName}`
-            : `create a realistic json response for an API named "${currentStep.api_name || 'unknown'}" (variable: api_responses.${cleanName})`;
+            ? `Give a json example as the value of '${namespace}.${cleanName}' to match value of these freemarker expressions: ${JSON.stringify(expressions)}, return the json value only, do not include the key ${namespace}.${cleanName}`
+            : `create a realistic json response for an API named "${cleanName}" (variable: ${namespace}.${cleanName})`;
 
-        const logPayload = { model: 'gpt-4.1-mini', message: prompt };
+        // Use first available model or fallback
+        const modelToUse = availableModels.length > 0 ? availableModels[0].id : 'gpt-4o';
+        console.log('[Mock Gen] Using model:', modelToUse, 'from available:', availableModels);
+
+        const logPayload = { model: modelToUse, message: prompt };
         setDebugLogs(prev => [...prev, `[Mock Gen] Invoking Chat Endpoint. Payload: ${JSON.stringify(logPayload)}`]);
+        console.log('[Mock Gen] Invoking Chat Endpoint:', logPayload);
 
-        sendMessage(prompt, 'gpt-4.1-mini')
+        // Timeout wrapper to prevent hanging indefinitely
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Request timed out')), 15000)
+        );
+
+        console.log('[Mock Gen] Starting Promise.race...');
+        Promise.race([sendMessage(prompt, modelToUse), timeoutPromise])
             .then(response => {
+                console.log('[Mock Gen] Response received:', response);
                 let json = response.content;
                 // Extract JSON from code block if present
                 if (json.includes('```json')) {
@@ -412,18 +509,35 @@ export default function WorkflowSimulator({ workflow }) {
                 } else if (json.includes('```')) {
                     json = json.split('```')[1].split('```')[0].trim();
                 }
-                setMockResponse(json);
+
+                console.log('[Mock Gen] Processed JSON:', json);
+                console.log('[Mock Gen] Updating state for key:', actualTargetKey);
+
+                if (actualTargetKey) {
+                    setRetrievedMocks(prev => {
+                        console.log('[Mock Gen] Previous mocks:', prev);
+                        const updated = { ...prev, [actualTargetKey]: json };
+                        console.log('[Mock Gen] Updated mocks:', updated);
+                        return updated;
+                    });
+                } else {
+                    setMockResponse(json);
+                }
                 setIsGeneratingMock(false);
+                console.log('[Mock Gen] Generation complete, state reset');
             })
             .catch(err => {
-                console.error("Failed to generate mock:", err);
+                console.error('[Mock Gen] Error caught:', err);
                 setIsGeneratingMock(false);
-                alert("Failed to generate mock. See console for details.");
+                alert(`Failed to generate mock: ${err.message}`);
             });
     };
 
+
+
     // Render Field Helper
-    const renderField = (field) => {
+    const renderField = (field, context) => {
+        // console.log(`[Debug] Rendering field ${field.name} with context keys:`, Object.keys(context.replies || {}));
         const isRequired = !field.attributes?.optional;
         const fieldValue = currentInputs[field.name];
 
@@ -437,7 +551,30 @@ export default function WorkflowSimulator({ workflow }) {
         // Evaluate Options if present
         let options = [];
         if (field.attributes?.options) {
-            const result = evaluateExpression(field.attributes.options, context);
+            let optionsSource = field.attributes.options;
+            // Handle multilingual options object (simple check)
+            if (optionsSource && typeof optionsSource === 'object' && !Array.isArray(optionsSource) && optionsSource['en-US']) {
+                optionsSource = optionsSource['en-US'];
+            }
+
+            let result;
+
+            // If it looks like a template (has tags), interpolate FIRST to handle <#list>, <#assign> etc.
+            if (typeof optionsSource === 'string' && (optionsSource.includes('<#') || optionsSource.includes('${'))) {
+                const interpolated = interpolateString(optionsSource, context);
+                try {
+                    result = JSON.parse(interpolated);
+                } catch (e) {
+                    console.warn('Failed to parse interpolated options:', interpolated, e);
+                    // Fallback: try evaluateExpression if interpolation failed to produce JSON 
+                    // (though unlikely to help if it really is a template)
+                    result = evaluateExpression(optionsSource, context);
+                }
+            } else {
+                // No tags, standard expression evaluation
+                result = evaluateExpression(optionsSource, context);
+            }
+
             if (Array.isArray(result)) {
                 options = result.map(opt => {
                     if (typeof opt === 'string' || typeof opt === 'number') {
@@ -446,7 +583,7 @@ export default function WorkflowSimulator({ workflow }) {
                     return opt;
                 });
             }
-            // Handle simple string fallback if expression fails
+            // Handle simple string fallback if expression fails (and not already parsed above)
             else if (typeof field.attributes.options === 'string' && field.attributes.options.startsWith('[')) {
                 try {
                     const parsed = JSON.parse(field.attributes.options);
@@ -580,6 +717,32 @@ export default function WorkflowSimulator({ workflow }) {
     };
 
 
+    // Helper to get context with current mocks applied for rendering
+    const getRenderContext = () => {
+        const renderContext = JSON.parse(JSON.stringify(context));
+        if (currentStep && currentStep.retrieved_answers) {
+            // console.log('[Debug] Building Render Context. retrievedMocks:', retrievedMocks);
+            Object.keys(currentStep.retrieved_answers).forEach(key => {
+                const mockValue = retrievedMocks[key];
+                try {
+                    if (mockValue) {
+                        const parsed = JSON.parse(mockValue);
+                        renderContext.replies[key] = parsed;
+                        // console.log(`[Debug] Merged mock for ${key}:`, parsed);
+                    }
+                } catch (e) {
+                    // Ignore parse errors during typing
+                    // console.log(`[Debug] Failed to parse mock for ${key}:`, e.message);
+                }
+            });
+            // console.log('[Debug] Final renderContext.replies:', JSON.stringify(renderContext.replies, null, 2));
+        }
+        // Also merge currentInputs into replies for immediate feedback?
+        // Standard behavior usually waits for next step, but for label_expressions referring to OTHER fields, it might be needed.
+        // For now, let's just focus on retrieved_answers.
+        return renderContext;
+    };
+
     if (!currentStep) return <div className="p-8 text-center text-muted-foreground">Loading workflow...</div>;
 
     if (currentStep.type === 'end') {
@@ -601,6 +764,8 @@ export default function WorkflowSimulator({ workflow }) {
         );
     }
 
+    const renderContext = getRenderContext();
+
     return (
         <div className="flex flex-col h-full bg-background">
             <div className="flex items-center justify-between p-4 border-b border-border/50">
@@ -616,14 +781,44 @@ export default function WorkflowSimulator({ workflow }) {
                 {/* Step Content */}
                 {currentStep.type === 'user_interaction' && (
                     <>
+                        {/* Retrieved Answers Mock Editors */}
+                        {currentStep.retrieved_answers && Object.keys(currentStep.retrieved_answers).map(key => (
+                            <div key={key} className="flex flex-col gap-4 p-6 border-2 border-dashed border-border rounded-lg bg-secondary/20 mb-6">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex flex-col flex-1 mr-4">
+                                        <label className="text-[10px] text-muted-foreground font-mono mb-1">Mock Data for:</label>
+                                        <div className="font-mono text-xs font-semibold text-primary">
+                                            {key} (mapped to replies.{key})
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => handleGenerateMock(key, key)}
+                                        disabled={isGeneratingMock}
+                                        className="text-xs px-3 py-1 bg-primary/10 text-primary hover:bg-primary/20 rounded border border-primary/20 transition-colors flex items-center gap-1"
+                                    >
+                                        {isGeneratingMock ? 'Generating...' : '✨ AI Generate Mock'}
+                                    </button>
+                                </div>
+                                <textarea
+                                    value={retrievedMocks[key] || ''}
+                                    onChange={(e) => setRetrievedMocks(prev => ({ ...prev, [key]: e.target.value }))}
+                                    className="w-full h-48 font-mono text-xs p-3 bg-secondary border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+                                    placeholder={`{\n  "status": "success",\n  "data": "..."\n}`}
+                                />
+                                <div className="text-[10px] text-muted-foreground flex items-center justify-between">
+                                    <span>Simulates backend data retrieval.</span>
+                                </div>
+                            </div>
+                        ))}
+
                         <div className="mb-6 prose prose-invert max-w-none prose-headings:text-lg prose-p:text-sm">
                             <ErrorBoundary fallback={<div className="text-red-400">Error rendering prompt</div>}>
                                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                    {interpolateString(extractPrompt(currentStep.prompt), context) || ''}
+                                    {interpolateString(extractPrompt(currentStep.prompt), renderContext) || ''}
                                 </ReactMarkdown>
                             </ErrorBoundary>
                         </div>
-                        {currentStep.fields?.map(renderField)}
+                        {currentStep.fields?.map(f => renderField(f, renderContext))}
                     </>
                 )}
 
