@@ -3,11 +3,12 @@ import { Send, Plus, ChevronDown, Clock, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { getModels } from '../services/agentApi';
 
-export default function ChatInput({ onSendMessage, disabled }) {
+export default function ChatInput({ onSendMessage, disabled, lastUserMessage, lastAssistantResponse }) {
     const [message, setMessage] = useState('');
     const [models, setModels] = useState([]);
     const [selectedModel, setSelectedModel] = useState(null);
     const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+    const [includeContext, setIncludeContext] = useState(false);
     const textareaRef = useRef(null);
     const dropdownRef = useRef(null);
 
@@ -47,7 +48,11 @@ export default function ChatInput({ onSendMessage, disabled }) {
     const handleSubmit = (e) => {
         e.preventDefault();
         if (message.trim() && !disabled) {
-            onSendMessage(message, selectedModel?.id);
+            // Include context only if checkbox is checked and we have previous messages
+            const prevResponse = includeContext ? lastAssistantResponse : null;
+            const prevRequest = includeContext ? lastUserMessage : null;
+
+            onSendMessage(message, selectedModel?.id, prevResponse, prevRequest);
             setMessage('');
             if (textareaRef.current) {
                 textareaRef.current.style.height = 'auto';
@@ -79,7 +84,7 @@ export default function ChatInput({ onSendMessage, disabled }) {
 
                     {/* Bottom toolbar */}
                     <div className="flex items-center justify-between px-4 pb-3">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-3">
                             <button
                                 type="button"
                                 className="p-1.5 rounded-lg hover:bg-secondary transition-colors"
@@ -92,6 +97,19 @@ export default function ChatInput({ onSendMessage, disabled }) {
                             >
                                 <Clock className="w-4 h-4 text-muted-foreground" />
                             </button>
+
+                            {/* Context Checkbox - only show if we have previous messages */}
+                            {lastUserMessage && lastAssistantResponse && (
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={includeContext}
+                                        onChange={(e) => setIncludeContext(e.target.checked)}
+                                        className="w-4 h-4 rounded border-border text-primary focus:ring-primary focus:ring-offset-0"
+                                    />
+                                    <span className="text-xs text-muted-foreground">Include context</span>
+                                </label>
+                            )}
                         </div>
 
                         <div className="flex items-center gap-3">

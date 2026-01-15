@@ -3,7 +3,7 @@
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-export const sendMessage = async (message, model) => {
+export const sendMessage = async (message, model, previousResponse = null, previousRequest = null) => {
     try {
 
 
@@ -14,7 +14,9 @@ export const sendMessage = async (message, model) => {
             },
             body: JSON.stringify({
                 model: model,
-                message: message
+                message: message,
+                previousResponse: previousResponse,
+                previousRequest: previousRequest
             })
         });
 

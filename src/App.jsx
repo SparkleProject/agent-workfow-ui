@@ -15,7 +15,9 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [workflow, setWorkflow] = useState(null);
   const [workflowPanelOpen, setWorkflowPanelOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('simulator'); // 'simulator' or 'graph'
+  const [activeTab, setActiveTab] = useState('simulator');
+  const [lastUserMessage, setLastUserMessage] = useState(null);
+  const [lastAssistantResponse, setLastAssistantResponse] = useState(null); // 'simulator' or 'graph'
   const [activeNodeId, setActiveNodeId] = useState(null);
 
   // MOCK DATA FOR RETRIEVED ANSWERS VERIFICATION
@@ -28,7 +30,7 @@ function App() {
 
 
 
-  const handleSendMessage = async (content, modelId) => {
+  const handleSendMessage = async (content, modelId, previousResponse = null, previousRequest = null) => {
     // Add user message
     const userMessage = { role: 'user', content };
     setMessages(prev => [...prev, userMessage]);
@@ -37,9 +39,13 @@ function App() {
     setIsLoading(true);
 
     try {
-      // Call API
-      const response = await sendMessage(content, modelId);
+      // Call API with context
+      const response = await sendMessage(content, modelId, previousResponse, previousRequest);
       setMessages(prev => [...prev, response]);
+
+      // Update conversation context
+      setLastUserMessage(content);
+      setLastAssistantResponse(response.content);
 
       // Check if response contains workflow data
       // Fix: Handle both array (V1) and object (V2 wave) formats
@@ -106,9 +112,13 @@ function App() {
             )}
           </div>
 
-          {/* Input Area */}
           <div className="flex-shrink-0 p-6 border-t border-border/50">
-            <ChatInput onSendMessage={handleSendMessage} disabled={isLoading} />
+            <ChatInput
+              onSendMessage={handleSendMessage}
+              disabled={isLoading}
+              lastUserMessage={lastUserMessage}
+              lastAssistantResponse={lastAssistantResponse}
+            />
           </div>
         </div>
 
