@@ -100,15 +100,28 @@ export default function ChatInput({ onSendMessage, disabled, lastUserMessage, la
 
                             {/* Context Checkbox - only show if we have previous messages */}
                             {lastUserMessage && lastAssistantResponse && (
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={includeContext}
-                                        onChange={(e) => setIncludeContext(e.target.checked)}
-                                        className="w-4 h-4 rounded border-border text-primary focus:ring-primary focus:ring-offset-0"
-                                    />
-                                    <span className="text-xs text-muted-foreground">Include context</span>
-                                </label>
+                                <button
+                                    type="button"
+                                    onClick={() => setIncludeContext(!includeContext)}
+                                    className={cn(
+                                        "flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-xs",
+                                        includeContext
+                                            ? "bg-primary/10 text-primary hover:bg-primary/20"
+                                            : "bg-secondary text-muted-foreground hover:bg-secondary/80"
+                                    )}
+                                >
+                                    <div className={cn(
+                                        "w-4 h-4 rounded border-2 flex items-center justify-center transition-colors",
+                                        includeContext
+                                            ? "border-primary bg-primary"
+                                            : "border-muted-foreground/30 bg-transparent"
+                                    )}>
+                                        {includeContext && (
+                                            <Check className="w-3 h-3 text-primary-foreground" />
+                                        )}
+                                    </div>
+                                    <span>Include context</span>
+                                </button>
                             )}
                         </div>
 
