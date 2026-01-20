@@ -27,6 +27,7 @@ export const sendMessage = async (message, model, previousResponse = null, previ
         const data = await response.json();
 
         let workflowData = data.wave || null;
+        let waveSummaryData = data.wave_summary || null;
 
         // If workflow data isn't at the top level, try to parse it from the response text
         if (!workflowData && data.response && typeof data.response === 'string') {
@@ -36,6 +37,11 @@ export const sendMessage = async (message, model, previousResponse = null, previ
                 // Simple heuristic to check if it might be JSON
                 if (trimmedResponse.startsWith('{') && (trimmedResponse.includes('"wave"') || trimmedResponse.includes('"type": "wave"'))) {
                     const parsedResponse = JSON.parse(data.response);
+
+                    // Extract wave_summary from parsed response if not already found
+                    if (!waveSummaryData && parsedResponse.wave_summary) {
+                        waveSummaryData = parsedResponse.wave_summary;
+                    }
 
                     // Case 1: V1 - Wrapped in "wave" array
                     if (parsedResponse.wave && Array.isArray(parsedResponse.wave)) {
@@ -58,7 +64,8 @@ export const sendMessage = async (message, model, previousResponse = null, previ
         return {
             role: 'assistant',
             content: data.response,
-            workflow: workflowData
+            workflow: workflowData,
+            waveSummary: waveSummaryData
         };
     } catch (error) {
         console.error('Error in sendMessage:', error);

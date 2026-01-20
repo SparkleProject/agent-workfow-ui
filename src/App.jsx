@@ -5,6 +5,7 @@ import ChatInput from './components/ChatInput';
 import MessageList from './components/MessageList';
 import WorkflowGraph from './components/WorkflowGraph';
 import WorkflowSimulator from './components/WorkflowSimulator';
+import WaveSummary from './components/WaveSummary';
 import { sendMessage } from './services/agentApi';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import './index.css';
@@ -14,6 +15,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [workflow, setWorkflow] = useState(null);
+  const [waveSummary, setWaveSummary] = useState(null);
   const [workflowPanelOpen, setWorkflowPanelOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('simulator');
   const [lastUserMessage, setLastUserMessage] = useState(null);
@@ -56,6 +58,7 @@ function App() {
 
       if (hasWorkflow) {
         setWorkflow(response.workflow);
+        setWaveSummary(response.waveSummary);
         setWorkflowPanelOpen(true);
       }
     } catch (error) {
@@ -150,6 +153,15 @@ function App() {
                   📝 Simulator
                 </button>
                 <button
+                  onClick={() => setActiveTab('summary')}
+                  className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-all border-b-2 ${activeTab === 'summary'
+                    ? 'bg-secondary text-foreground border-primary'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/30 border-transparent'
+                    }`}
+                >
+                  📄 Summary
+                </button>
+                <button
                   onClick={() => setActiveTab('graph')}
                   className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-all border-b-2 ${activeTab === 'graph'
                     ? 'bg-secondary text-foreground border-primary'
@@ -165,6 +177,9 @@ function App() {
             <div className="flex-1 overflow-hidden relative">
               <div className={`absolute inset-0 bg-background ${activeTab === 'simulator' ? 'block' : 'hidden'}`}>
                 <WorkflowSimulator workflow={workflow} />
+              </div>
+              <div className={`absolute inset-0 bg-background ${activeTab === 'summary' ? 'block' : 'hidden'}`}>
+                <WaveSummary summary={waveSummary} />
               </div>
               <div className={`absolute inset-0 bg-background ${activeTab === 'graph' ? 'block' : 'hidden'}`}>
                 <WorkflowGraph
