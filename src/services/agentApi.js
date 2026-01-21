@@ -28,6 +28,7 @@ export const sendMessage = async (message, model, previousResponse = null, previ
 
         let workflowData = data.wave || null;
         let waveSummaryData = data.wave_summary || null;
+        let changesData = data.changes || null;
 
         // If workflow data isn't at the top level, try to parse it from the response text
         if (!workflowData && data.response && typeof data.response === 'string') {
@@ -41,6 +42,11 @@ export const sendMessage = async (message, model, previousResponse = null, previ
                     // Extract wave_summary from parsed response if not already found
                     if (!waveSummaryData && parsedResponse.wave_summary) {
                         waveSummaryData = parsedResponse.wave_summary;
+                    }
+
+                    // Extract changes from parsed response if not already found
+                    if (!changesData && parsedResponse.changes) {
+                        changesData = parsedResponse.changes;
                     }
 
                     // Case 1: V1 - Wrapped in "wave" array
@@ -65,7 +71,8 @@ export const sendMessage = async (message, model, previousResponse = null, previ
             role: 'assistant',
             content: data.response,
             workflow: workflowData,
-            waveSummary: waveSummaryData
+            waveSummary: waveSummaryData,
+            changes: changesData
         };
     } catch (error) {
         console.error('Error in sendMessage:', error);

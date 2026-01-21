@@ -16,6 +16,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [workflow, setWorkflow] = useState(null);
   const [waveSummary, setWaveSummary] = useState(null);
+  const [changes, setChanges] = useState(null);
   const [workflowPanelOpen, setWorkflowPanelOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('simulator');
   const [lastUserMessage, setLastUserMessage] = useState(null);
@@ -59,6 +60,7 @@ function App() {
       if (hasWorkflow) {
         setWorkflow(response.workflow);
         setWaveSummary(response.waveSummary);
+        setChanges(response.changes);
         setWorkflowPanelOpen(true);
       }
     } catch (error) {
@@ -179,7 +181,7 @@ function App() {
                 <WorkflowSimulator workflow={workflow} />
               </div>
               <div className={`absolute inset-0 bg-background ${activeTab === 'summary' ? 'block' : 'hidden'}`}>
-                <WaveSummary summary={waveSummary} />
+                <WaveSummary summary={waveSummary} changes={changes} />
               </div>
               <div className={`absolute inset-0 bg-background ${activeTab === 'graph' ? 'block' : 'hidden'}`}>
                 <WorkflowGraph
