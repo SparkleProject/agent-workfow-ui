@@ -106,3 +106,121 @@ export const getModels = async () => {
         return [];
     }
 };
+// Streaming version of sendMessage for Server-Sent Events
+export const sendStreamingMessage = async (message, model, previousResponse = null, previousRequest = null, onChunk, onComplete, onError) => {
+    try {
+        const response = await fetch('/api/azure/chat/stream', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: model,
+                message: message,
+                previousResponse: previousResponse,
+                previousRequest: previousRequest
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullResponse = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+
+            // Keep the last incomplete line in the buffer
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (line.startsWith('data:')) {
+                    const data = line.slice(5); // Remove 'data:' prefix, keep the space
+                    console.log('[SSE] Received data:', data);
+
+                    if (data === '[DONE]') {
+                        continue;
+                    }
+
+                    // Try to parse as JSON first
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (parsed.chunk) {
+                            console.log('[SSE] Parsed chunk:', parsed.chunk);
+                            fullResponse += parsed.chunk;
+                            onChunk(parsed.chunk);
+                        } else if (typeof parsed === 'string') {
+                            // If parsed is a string, use it directly
+                            fullResponse += parsed;
+                            onChunk(parsed);
+                        }
+                    } catch (e) {
+                        // If JSON parsing fails, treat it as raw text
+                        if (data) {
+                            console.log('[SSE] Raw text chunk:', data);
+                            fullResponse += data;
+                            onChunk(data);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Parse the complete response
+        let workflowData = null;
+        let waveSummaryData = null;
+        let changesData = null;
+
+        try {
+            const trimmedResponse = fullResponse.trim();
+            if (trimmedResponse.startsWith('{') && (trimmedResponse.includes('"wave"') || trimmedResponse.includes('"type": "wave"'))) {
+                const parsedResponse = JSON.parse(fullResponse);
+
+                if (parsedResponse.wave_summary) {
+                    waveSummaryData = parsedResponse.wave_summary;
+                }
+
+                if (parsedResponse.changes) {
+                    changesData = parsedResponse.changes;
+                }
+
+                if (parsedResponse.wave && Array.isArray(parsedResponse.wave)) {
+                    workflowData = parsedResponse.wave;
+                } else if (parsedResponse.type === 'wave' && Array.isArray(parsedResponse.actions)) {
+                    workflowData = parsedResponse;
+                } else if (parsedResponse.wave && parsedResponse.wave.type === 'wave') {
+                    workflowData = parsedResponse.wave;
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to parse complete response:', e);
+        }
+
+        const result = {
+            role: 'assistant',
+            content: fullResponse,
+            workflow: workflowData,
+            waveSummary: waveSummaryData,
+            changes: changesData
+        };
+
+        onComplete(result);
+        return result;
+
+    } catch (error) {
+        console.error('Error in sendStreamingMessage:', error);
+        if (onError) {
+            onError(error);
+        }
+        throw error;
+    }
+};

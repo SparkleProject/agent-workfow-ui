@@ -5,6 +5,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { cn } from '../lib/utils';
 import { useEffect } from 'react';
+import StreamingPanel from './StreamingPanel';
 
 // Helper function to detect if content is JSON and wrap it in a code block
 function preprocessContent(content) {
@@ -37,6 +38,10 @@ export default function MessageList({ messages, isLoading, activeNodeId }) {
             }
         }
     }, [activeNodeId]);
+
+    // Check if any message is currently streaming
+    const hasStreamingMessage = messages.some(msg => msg.isStreaming);
+
     return (
         <div className="flex-1 overflow-y-auto">
             <div className="max-w-3xl mx-auto space-y-8 py-8">
@@ -66,6 +71,13 @@ export default function MessageList({ messages, isLoading, activeNodeId }) {
                             <div className="text-foreground/90 whitespace-pre-wrap break-words prose prose-invert max-w-none">
                                 {msg.role === 'user' ? (
                                     msg.content
+                                ) : msg.isStreaming ? (
+                                    <>
+                                        <StreamingPanel
+                                            content={msg.streamingContent || ''}
+                                            isComplete={false}
+                                        />
+                                    </>
                                 ) : (
                                     <ReactMarkdown
                                         remarkPlugins={[remarkGfm]}
@@ -157,8 +169,8 @@ export default function MessageList({ messages, isLoading, activeNodeId }) {
                     </div>
                 ))}
 
-                {/* Loading Indicator */}
-                {isLoading && (
+                {/* Loading Indicator - only show when not streaming */}
+                {isLoading && !hasStreamingMessage && (
                     <div className="flex gap-4">
                         <div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-600">
                             <Bot className="w-4 h-4 text-white" />

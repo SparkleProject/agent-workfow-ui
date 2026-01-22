@@ -9,6 +9,7 @@ export default function ChatInput({ onSendMessage, disabled, lastUserMessage, la
     const [selectedModel, setSelectedModel] = useState(null);
     const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
     const [includeContext, setIncludeContext] = useState(false);
+    const [streamEnabled, setStreamEnabled] = useState(false);
     const textareaRef = useRef(null);
     const dropdownRef = useRef(null);
 
@@ -52,7 +53,7 @@ export default function ChatInput({ onSendMessage, disabled, lastUserMessage, la
             const prevResponse = includeContext ? lastAssistantResponse : null;
             const prevRequest = includeContext ? lastUserMessage : null;
 
-            onSendMessage(message, selectedModel?.id, prevResponse, prevRequest);
+            onSendMessage(message, selectedModel?.id, prevResponse, prevRequest, streamEnabled);
             setMessage('');
             if (textareaRef.current) {
                 textareaRef.current.style.height = 'auto';
@@ -121,6 +122,32 @@ export default function ChatInput({ onSendMessage, disabled, lastUserMessage, la
                                         )}
                                     </div>
                                     <span>Include context</span>
+                                </button>
+                            )}
+
+                            {/* Stream Chat Checkbox - only show for gpt-wave model */}
+                            {selectedModel?.id === 'gpt-wave' && (
+                                <button
+                                    type="button"
+                                    onClick={() => setStreamEnabled(!streamEnabled)}
+                                    className={cn(
+                                        "flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-xs",
+                                        streamEnabled
+                                            ? "bg-primary/10 text-primary hover:bg-primary/20"
+                                            : "bg-secondary text-muted-foreground hover:bg-secondary/80"
+                                    )}
+                                >
+                                    <div className={cn(
+                                        "w-4 h-4 rounded border-2 flex items-center justify-center transition-colors",
+                                        streamEnabled
+                                            ? "border-primary bg-primary"
+                                            : "border-muted-foreground/30 bg-transparent"
+                                    )}>
+                                        {streamEnabled && (
+                                            <Check className="w-3 h-3 text-primary-foreground" />
+                                        )}
+                                    </div>
+                                    <span>Stream chat</span>
                                 </button>
                             )}
                         </div>
