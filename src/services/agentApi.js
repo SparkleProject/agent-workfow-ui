@@ -238,9 +238,18 @@ export const sendStreamingMessage = async (message, model, previousResponse = nu
             console.warn('[Streaming] Failed to parse complete response:', e);
         }
 
+        // Format the content for display (wrap JSON in markdown code blocks)
+        let formattedContent = fullResponse;
+        const trimmed = fullResponse.trim();
+        if ((trimmed.startsWith('{') || trimmed.startsWith('[')) &&
+            (trimmed.endsWith('}') || trimmed.endsWith(']'))) {
+            // Wrap JSON in markdown code block for syntax highlighting
+            formattedContent = '```json\n' + trimmed + '\n```';
+        }
+
         const result = {
             role: 'assistant',
-            content: fullResponse,
+            content: formattedContent,
             workflow: workflowData,
             waveSummary: waveSummaryData,
             changes: changesData
