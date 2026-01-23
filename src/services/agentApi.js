@@ -3,6 +3,23 @@
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Helper function to sanitize malformed JSON from backend
+// Fixes common issues like missing values: "key": , => "key": null,
+const sanitizeJSON = (jsonString) => {
+    try {
+        // Fix missing values after colons (e.g., "version": , => "version": null,)
+        let sanitized = jsonString
+            .replace(/:\s*,/g, ': null,')           // "key": , => "key": null,
+            .replace(/:\s*}/g, ': null}')           // "key": } => "key": null}
+            .replace(/:\s*]/g, ': null]');          // "key": ] => "key": null]
+
+        return sanitized;
+    } catch (e) {
+        console.warn('[JSON Sanitizer] Failed to sanitize:', e);
+        return jsonString;
+    }
+};
+
 export const sendMessage = async (message, model, previousResponse = null, previousRequest = null) => {
     try {
 
@@ -33,11 +50,14 @@ export const sendMessage = async (message, model, previousResponse = null, previ
         // If workflow data isn't at the top level, try to parse it from the response text
         if (!workflowData && data.response && typeof data.response === 'string') {
             try {
+                // Sanitize the JSON to fix malformed backend responses
+                const sanitizedResponse = sanitizeJSON(data.response);
+
                 // Check if the response looks like JSON
-                const trimmedResponse = data.response.trim();
+                const trimmedResponse = sanitizedResponse.trim();
                 // Simple heuristic to check if it might be JSON
                 if (trimmedResponse.startsWith('{') && (trimmedResponse.includes('"wave"') || trimmedResponse.includes('"type": "wave"'))) {
-                    const parsedResponse = JSON.parse(data.response);
+                    const parsedResponse = JSON.parse(sanitizedResponse);
 
                     // Extract wave_summary from parsed response if not already found
                     if (!waveSummaryData && parsedResponse.wave_summary) {
@@ -175,34 +195,47 @@ export const sendStreamingMessage = async (message, model, previousResponse = nu
             }
         }
 
-        // Parse the complete response
+        // Parse the complete response using the SAME logic as non-streaming mode
         let workflowData = null;
         let waveSummaryData = null;
         let changesData = null;
 
         try {
-            const trimmedResponse = fullResponse.trim();
-            if (trimmedResponse.startsWith('{') && (trimmedResponse.includes('"wave"') || trimmedResponse.includes('"type": "wave"'))) {
-                const parsedResponse = JSON.parse(fullResponse);
+            // Sanitize the JSON to fix malformed backend responses
+            const sanitizedResponse = sanitizeJSON(fullResponse);
 
+            // Check if the response looks like JSON
+            const trimmedResponse = sanitizedResponse.trim();
+            if (trimmedResponse.startsWith('{') && (trimmedResponse.includes('"wave"') || trimmedResponse.includes('"type": "wave"'))) {
+                const parsedResponse = JSON.parse(sanitizedResponse);
+
+                // Extract wave_summary from parsed response
                 if (parsedResponse.wave_summary) {
                     waveSummaryData = parsedResponse.wave_summary;
                 }
 
+                // Extract changes from parsed response
                 if (parsedResponse.changes) {
                     changesData = parsedResponse.changes;
                 }
 
+                // Case 1: V1 - Wrapped in "wave" array
                 if (parsedResponse.wave && Array.isArray(parsedResponse.wave)) {
                     workflowData = parsedResponse.wave;
-                } else if (parsedResponse.type === 'wave' && Array.isArray(parsedResponse.actions)) {
+                }
+                // Case 2: V2 - Root object is the wave
+                else if (parsedResponse.type === 'wave' && Array.isArray(parsedResponse.actions)) {
                     workflowData = parsedResponse;
-                } else if (parsedResponse.wave && parsedResponse.wave.type === 'wave') {
+                }
+                // Case 3: V2 - Wrapped in "wave" object
+                else if (parsedResponse.wave && parsedResponse.wave.type === 'wave') {
                     workflowData = parsedResponse.wave;
                 }
+
+                console.log('[Streaming] ✓ Successfully extracted workflow data:', { workflowData, waveSummaryData, changesData });
             }
         } catch (e) {
-            console.warn('Failed to parse complete response:', e);
+            console.warn('[Streaming] Failed to parse complete response:', e);
         }
 
         const result = {
