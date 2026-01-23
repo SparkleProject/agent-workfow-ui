@@ -243,8 +243,15 @@ export const sendStreamingMessage = async (message, model, previousResponse = nu
         const trimmed = fullResponse.trim();
         if ((trimmed.startsWith('{') || trimmed.startsWith('[')) &&
             (trimmed.endsWith('}') || trimmed.endsWith(']'))) {
-            // Wrap JSON in markdown code block for syntax highlighting
-            formattedContent = '```json\n' + trimmed + '\n```';
+            try {
+                // Parse and pretty-print the JSON for readable display
+                const parsed = JSON.parse(sanitizeJSON(trimmed));
+                const prettyJson = JSON.stringify(parsed, null, 2);
+                formattedContent = '```json\n' + prettyJson + '\n```';
+            } catch (e) {
+                // If parsing fails, just wrap the raw content
+                formattedContent = '```json\n' + trimmed + '\n```';
+            }
         }
 
         const result = {
