@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ChevronRight, ChevronLeft, RotateCcw, Play, Sparkles } from 'lucide-react';
+import { ChevronRight, ChevronLeft, RotateCcw, Play, Sparkles, Terminal, ChevronDown, ChevronUp } from 'lucide-react';
 import { evaluateExpression, interpolateString } from '../utils/expressionEngine';
 import { ErrorBoundary } from './ErrorBoundary';
 import { sendMessage, getModels } from '../services/agentApi';
@@ -26,6 +26,7 @@ export default function WorkflowSimulator({ workflow }) {
     const [isSimulatingApi, setIsSimulatingApi] = useState(false);
     const [currentStep, setCurrentStep] = useState(null);
     const [debugLogs, setDebugLogs] = useState([]);
+    const [showRuntimeLogs, setShowRuntimeLogs] = useState(false);
 
     // Helper to normalize workflow actions (handle V1 array and V2 wave object)
     const getWorkflowActions = (wf) => {
@@ -943,12 +944,32 @@ export default function WorkflowSimulator({ workflow }) {
                 </button>
             </div>
 
-            {/* Debug Logs Panel - Fixed height at bottom */}
-            <div className="flex-shrink-0 bg-black/90 text-green-400 font-mono text-[10px] p-2 h-32 overflow-auto border-t border-white/10">
-                <div className="font-bold border-b border-white/20 mb-1">Runtime Logs</div>
-                {debugLogs.map((log, i) => (
-                    <div key={i}>{log}</div>
-                ))}
+            {/* Debug Logs Panel - Collapsible */}
+            <div className="flex-shrink-0 bg-black/90 border-t border-white/10">
+                {/* Header with toggle */}
+                <button
+                    onClick={() => setShowRuntimeLogs(!showRuntimeLogs)}
+                    className="w-full flex items-center justify-between px-2 py-1 hover:bg-white/5 transition-colors"
+                >
+                    <div className="flex items-center gap-2 text-green-400 font-mono text-[10px] font-bold">
+                        <Terminal className="w-3 h-3" />
+                        <span>Runtime Logs</span>
+                    </div>
+                    {showRuntimeLogs ? (
+                        <ChevronDown className="w-3 h-3 text-green-400" />
+                    ) : (
+                        <ChevronUp className="w-3 h-3 text-green-400" />
+                    )}
+                </button>
+
+                {/* Logs content */}
+                {showRuntimeLogs && (
+                    <div className="text-green-400 font-mono text-[10px] p-2 h-32 overflow-auto">
+                        {debugLogs.map((log, i) => (
+                            <div key={i}>{log}</div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );

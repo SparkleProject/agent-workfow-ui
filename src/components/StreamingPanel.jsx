@@ -1,8 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
 export default function StreamingPanel({ content, isComplete }) {
     const [isExpanded, setIsExpanded] = useState(true);
+    const contentRef = useRef(null);
+
+    // Auto-scroll to bottom when content updates during streaming
+    useEffect(() => {
+        if (contentRef.current && !isComplete) {
+            contentRef.current.scrollTop = contentRef.current.scrollHeight;
+        }
+    }, [content, isComplete]);
 
     // Auto-collapse when streaming is complete
     useEffect(() => {
@@ -37,7 +45,10 @@ export default function StreamingPanel({ content, isComplete }) {
             {/* Content */}
             {isExpanded && (
                 <div className="px-4 py-3 border-t border-border/50 bg-background/50">
-                    <div className="text-sm text-foreground/80 whitespace-pre-wrap break-words font-mono max-h-96 overflow-y-auto leading-relaxed">
+                    <div
+                        ref={contentRef}
+                        className="text-sm text-foreground/80 whitespace-pre-wrap break-words font-mono max-h-96 overflow-y-auto leading-relaxed"
+                    >
                         {content || 'Waiting for response...'}
                     </div>
                 </div>

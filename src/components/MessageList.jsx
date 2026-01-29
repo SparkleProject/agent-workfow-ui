@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { cn } from '../lib/utils';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import StreamingPanel from './StreamingPanel';
 
 // Helper function to detect if content is JSON and wrap it in a code block
@@ -29,6 +29,8 @@ function preprocessContent(content) {
 }
 
 export default function MessageList({ messages, isLoading, activeNodeId }) {
+    const messageListRef = useRef(null);
+
     // Effect to scroll to highlighted line
     useEffect(() => {
         if (activeNodeId) {
@@ -39,14 +41,21 @@ export default function MessageList({ messages, isLoading, activeNodeId }) {
         }
     }, [activeNodeId]);
 
+    // Auto-scroll to bottom when messages change (especially during streaming)
+    useEffect(() => {
+        if (messageListRef.current) {
+            messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+        }
+    }, [messages]);
+
     // Check if any message is currently streaming
     const hasStreamingMessage = messages.some(msg => msg.isStreaming);
 
     return (
-        <div className="flex-1 overflow-y-auto">
+        <div ref={messageListRef} className="flex-1 overflow-y-auto">
             <div className="max-w-3xl mx-auto space-y-8 py-8">
                 {messages.map((msg, index) => (
-                    <div key={index} className="flex gap-4 group">
+                    <div key={index} className="flex gap-4 group">{/* Avatar */}
                         {/* Avatar */}
                         <div
                             className={cn(
