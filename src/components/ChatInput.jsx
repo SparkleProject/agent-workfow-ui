@@ -125,8 +125,8 @@ export default function ChatInput({ onSendMessage, disabled, lastUserMessage, la
                                 </button>
                             )}
 
-                            {/* Stream Chat Checkbox - only show for gpt-wave model */}
-                            {selectedModel?.id === 'gpt-wave' && (
+                            {/* Stream Chat Checkbox - only show for models containing 'wave' */}
+                            {selectedModel?.id?.includes('wave') && (
                                 <button
                                     type="button"
                                     onClick={() => setStreamEnabled(!streamEnabled)}
