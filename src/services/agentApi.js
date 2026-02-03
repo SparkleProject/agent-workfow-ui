@@ -163,7 +163,6 @@ export const sendStreamingMessage = async (message, model, previousResponse = nu
             for (const line of lines) {
                 if (line.startsWith('data:')) {
                     const data = line.slice(5); // Remove 'data:' prefix, keep the space
-                    console.log('[SSE] Received data:', data);
 
                     if (data === '[DONE]') {
                         continue;
@@ -172,19 +171,20 @@ export const sendStreamingMessage = async (message, model, previousResponse = nu
                     // Try to parse as JSON first
                     try {
                         const parsed = JSON.parse(data);
-                        if (parsed.chunk) {
-                            console.log('[SSE] Parsed chunk:', parsed.chunk);
-                            fullResponse += parsed.chunk;
-                            onChunk(parsed.chunk);
-                        } else if (typeof parsed === 'string') {
-                            // If parsed is a string, use it directly
-                            fullResponse += parsed;
-                            onChunk(parsed);
+                        if (parsed && typeof parsed === 'object' && parsed.chunk !== undefined) {
+                            const chunkValue = String(parsed.chunk);
+                            fullResponse += chunkValue;
+                            onChunk(chunkValue);
+                        } else if (parsed !== null && parsed !== undefined) {
+                            // If parsed is a string, number, boolean, or array
+                            // we must ensure it's added to the full response as a string.
+                            const content = typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
+                            fullResponse += content;
+                            onChunk(content);
                         }
                     } catch (e) {
                         // If JSON parsing fails, treat it as raw text
                         if (data) {
-                            console.log('[SSE] Raw text chunk:', data);
                             fullResponse += data;
                             onChunk(data);
                         }
