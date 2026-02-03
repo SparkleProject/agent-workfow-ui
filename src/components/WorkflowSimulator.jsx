@@ -486,8 +486,8 @@ export default function WorkflowSimulator({ workflow }) {
             ? `Give a json example as the value of '${namespace}.${cleanName}' to match value of these freemarker expressions: ${JSON.stringify(expressions)}, return the json value only, do not include the key ${namespace}.${cleanName}`
             : `create a realistic json response for an API named "${cleanName}" (variable: ${namespace}.${cleanName})`;
 
-        // Use first available model or fallback
-        const modelToUse = availableModels.length > 0 ? availableModels[0].id : 'gpt-4o';
+        // Use specified model for mock generation
+        const modelToUse = 'gpt-5.1';
         console.log('[Mock Gen] Using model:', modelToUse, 'from available:', availableModels);
 
         const logPayload = { model: modelToUse, message: prompt };
