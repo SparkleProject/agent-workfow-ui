@@ -6,14 +6,12 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 // Helper function to sanitize malformed JSON from backend
 // Fixes common issues like missing values: "key": , => "key": null,
 const sanitizeJSON = (jsonString) => {
+    if (typeof jsonString !== 'string') return jsonString;
     try {
         // Fix missing values after colons (e.g., "version": , => "version": null,)
-        let sanitized = jsonString
-            .replace(/:\s*,/g, ': null,')           // "key": , => "key": null,
-            .replace(/:\s*}/g, ': null}')           // "key": } => "key": null}
-            .replace(/:\s*]/g, ': null]');          // "key": ] => "key": null]
-
-        return sanitized;
+        // We only match if the colon follows a double quote (end of a key)
+        // and is followed ONLY by whitespace before a delimiter (, } or ])
+        return jsonString.replace(/"(\s*:\s*)(?=[,}\]])/g, '"$1null');
     } catch (e) {
         console.warn('[JSON Sanitizer] Failed to sanitize:', e);
         return jsonString;
