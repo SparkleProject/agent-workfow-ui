@@ -73,7 +73,7 @@ function CodeBlock({ language, formattedCode, activeNodeId, ...props }) {
 
                         if (lineContent && (lineContent.includes(definitionMatchString) || lineContent.includes(definitionMatchNumber))) {
                             style.backgroundColor = '#eab30833';
-                            return { style, id: 'active-json-line' };
+                            return { style, 'data-active-node': activeNodeId };
                         }
                     }
                     return { style };
@@ -89,12 +89,15 @@ function CodeBlock({ language, formattedCode, activeNodeId, ...props }) {
 export default function MessageList({ messages, isLoading, activeNodeId }) {
     const messageListRef = useRef(null);
 
-    // Effect to scroll to highlighted line
+    // Effect to scroll to highlighted line (last occurrence)
     useEffect(() => {
         if (activeNodeId) {
-            const element = document.getElementById('active-json-line');
-            if (element) {
-                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Find all elements with the active node data attribute
+            const elements = document.querySelectorAll(`[data-active-node="${activeNodeId}"]`);
+            if (elements.length > 0) {
+                // Scroll to the last occurrence
+                const lastElement = elements[elements.length - 1];
+                lastElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
         }
     }, [activeNodeId]);
