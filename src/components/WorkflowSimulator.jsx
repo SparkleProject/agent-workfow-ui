@@ -585,16 +585,18 @@ export default function WorkflowSimulator({ workflow }) {
                 });
             }
             // Handle simple string fallback if expression fails (and not already parsed above)
-            else if (typeof field.attributes.options === 'string' && field.attributes.options.startsWith('[')) {
+            else if (typeof optionsSource === 'string' && optionsSource.trim().startsWith('[')) {
                 try {
-                    const parsed = JSON.parse(field.attributes.options);
+                    const parsed = JSON.parse(optionsSource);
                     options = parsed.map(opt => {
                         if (typeof opt === 'string' || typeof opt === 'number') {
                             return { label: String(opt), value: String(opt) };
                         }
                         return opt;
                     });
-                } catch (e) { }
+                } catch (e) {
+                    console.error("Failed to parse optionsSource JSON:", e);
+                }
             }
         }
 
