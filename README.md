@@ -1,6 +1,8 @@
-# Agent API Playground UI
+# Agent Workflow UI
 
 A React-based user interface for interacting with AI agent APIs, featuring chat functionality and workflow visualization.
+
+![App Screenshot](public/screenshot.png)
 
 ## Features
 
@@ -20,8 +22,8 @@ A React-based user interface for interacting with AI agent APIs, featuring chat 
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/SparkleProject/agent-api-playground-ui.git
-   cd agent-api-playground-ui
+   git clone https://github.com/SparkleProject/agent-workflow-ui.git
+   cd agent-workflow-ui
    ```
 
 2. **Install dependencies**
